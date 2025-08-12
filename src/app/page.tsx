@@ -4,6 +4,31 @@ import { useEffect, useState, useCallback } from "react";
 import { Dataset } from "@/lib/types";
 import { DatasetCard } from "@/components/DatasetCard";
 import { clientDB } from "@/lib/clientDb";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { getRememberFolder, setRememberFolder } from "@/lib/preferences";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { FolderOpen, Plus, Database, Activity, RefreshCw, HelpCircle } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
 
 export default function Home() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
@@ -12,8 +37,20 @@ export default function Home() {
   const [directorySelected, setDirectorySelected] = useState<boolean>(false);
   const [initializingDirectory, setInitializingDirectory] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
-  const [rememberFolder, setRememberFolder] = useState<boolean>(false);
+  const [rememberFolder, setRememberFolderState] = useState<boolean>(false);
   const [checkingStoredDirectory, setCheckingStoredDirectory] = useState<boolean>(false);
+  const [datasetToDelete, setDatasetToDelete] = useState<Dataset | null>(null);
+  
+  // Dataset creation/rename dialogs
+  const [showCreateDialog, setShowCreateDialog] = useState<boolean>(false);
+  const [showRenameDialog, setShowRenameDialog] = useState<boolean>(false);
+  const [datasetToRename, setDatasetToRename] = useState<Dataset | null>(null);
+  const [newDatasetName, setNewDatasetName] = useState<string>("");
+  const [renameDatasetName, setRenameDatasetName] = useState<string>("");
+  
+
+
+
 
   const loadDatasets = useCallback(async () => {
     // Check if directory is actually selected in the clientDB
@@ -77,6 +114,10 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // Load user preferences
+      const shouldRemember = getRememberFolder();
+      setRememberFolderState(shouldRemember);
+
       // Check if File System Access API is supported
       if (!clientDB.isSupported()) {
         setError(clientDB.getBrowserCompatibilityMessage());
@@ -110,6 +151,7 @@ export default function Home() {
       await clientDB.resetDirectory();
       setDirectorySelected(false);
       setDatasets([]);
+      setRememberFolderState(false);
       setRememberFolder(false);
     } catch (error) {
       console.error("Failed to reset directory:", error);
@@ -117,15 +159,21 @@ export default function Home() {
     }
   }
 
-  async function createNewDataset() {
-    const name = prompt("Enter dataset name:");
-    if (!name || !name.trim()) return;
+  function createNewDataset() {
+    setNewDatasetName("");
+    setShowCreateDialog(true);
+  }
+
+  async function handleCreateDataset() {
+    if (!newDatasetName.trim()) return;
     
     setCreating(true);
     setError("");
     try {
-      await clientDB.createDataset(name.trim());
+      await clientDB.createDataset(newDatasetName.trim());
       await loadDatasets();
+      setShowCreateDialog(false);
+      setNewDatasetName("");
     } catch (error) {
       console.error("Failed to create dataset:", error);
       setError(error instanceof Error ? error.message : "Failed to create dataset");
@@ -134,27 +182,40 @@ export default function Home() {
     }
   }
 
-  async function renameDataset(dataset: Dataset) {
-    const name = prompt("New dataset name:", dataset.name);
-    if (!name || !name.trim()) return;
+  function renameDataset(dataset: Dataset) {
+    setDatasetToRename(dataset);
+    setRenameDatasetName(dataset.name);
+    setShowRenameDialog(true);
+  }
+
+  async function handleRenameDataset() {
+    if (!datasetToRename || !renameDatasetName.trim()) return;
     
     setError("");
     try {
-      await clientDB.updateDataset(dataset.id, { name: name.trim() });
+      await clientDB.updateDataset(datasetToRename.id, { name: renameDatasetName.trim() });
       await loadDatasets();
+      setShowRenameDialog(false);
+      setDatasetToRename(null);
+      setRenameDatasetName("");
     } catch (error) {
       console.error("Failed to rename dataset:", error);
       setError(error instanceof Error ? error.message : "Failed to rename dataset");
     }
   }
 
-  async function deleteDataset(dataset: Dataset) {
-    if (!confirm(`Delete dataset "${dataset.name}"? This cannot be undone.`)) return;
+  function deleteDataset(dataset: Dataset) {
+    setDatasetToDelete(dataset);
+  }
+
+  async function confirmDeleteDataset() {
+    if (!datasetToDelete) return;
     
     setError("");
     try {
-      await clientDB.deleteDataset(dataset.id);
+      await clientDB.deleteDataset(datasetToDelete.id);
       await loadDatasets();
+      setDatasetToDelete(null);
     } catch (error) {
       console.error("Failed to delete dataset:", error);
       setError(error instanceof Error ? error.message : "Failed to delete dataset");
@@ -164,20 +225,45 @@ export default function Home() {
   // Show error if File System Access API is not supported
   if (error && error.includes("not supported")) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
-        <div className="text-center max-w-2xl mx-auto p-8">
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-8">
-            <svg className="w-16 h-16 text-red-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.94-.833-2.598 0L4.216 15.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-            <h2 className="text-2xl font-bold text-red-900 dark:text-red-100 mb-4">Browser Not Supported</h2>
-            <p className="text-red-700 dark:text-red-300 mb-6">{error}</p>
-            <p className="text-red-600 dark:text-red-400">
-              This application requires the File System Access API to store data locally on your computer. 
-              Please switch to a compatible browser to continue.
-            </p>
-          </div>
+      <div className="min-h-screen relative">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6 z-10 flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Show interactive welcome guide</p>
+            </TooltipContent>
+          </Tooltip>
+          <ThemeToggle />
         </div>
+        <div className="flex items-center justify-center min-h-screen p-4 sm:p-6">
+          <Card className="max-w-2xl w-full mx-4 border-destructive/50">
+            <CardHeader className="text-center pb-6">
+              <div className="mx-auto mb-6 flex h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-destructive/10">
+                <Activity className="h-6 w-6 sm:h-8 sm:w-8 text-destructive" />
+              </div>
+              <CardTitle className="text-xl sm:text-2xl text-destructive mb-3">Browser Not Supported</CardTitle>
+              <CardDescription className="text-destructive/80 text-sm sm:text-base px-2">
+                {error}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center pt-0">
+              <p className="text-destructive/70 text-sm sm:text-base px-2">
+                This application requires the File System Access API to store data locally on your computer. 
+                Please switch to a compatible browser to continue.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+        
+
       </div>
     );
   }
@@ -185,193 +271,287 @@ export default function Home() {
   // Show directory selection if not yet selected
   if (!directorySelected && !loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
-        <div className="text-center max-w-2xl mx-auto p-8">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-lg border border-gray-200 dark:border-slate-700 p-12">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mb-6">
-              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
-              </svg>
+      <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6 z-10 flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link href="/docs">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>View documentation and guides</p>
+            </TooltipContent>
+          </Tooltip>
+          <ThemeToggle />
+        </div>
+        <Card className="max-w-2xl w-full mx-4">
+          <CardHeader className="text-center pb-6">
+            <div className="mx-auto flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-white mb-6">
+              <Image src="/logo.png" alt="DataGreg logo" width={64} height={64} />
             </div>
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
-              DataGreg
-            </h1>
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
-              Edit your AI/LLMs datasets in your browser, no need to download anything.
-            </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
-              Select a folder on your computer where your datasets will be stored.
-            </p>
+            <div className="space-y-3">
+              <CardTitle className="text-2xl sm:text-3xl lg:text-4xl font-bold">
+                DataGreg
+              </CardTitle>
+              <CardDescription className="text-lg sm:text-xl font-semibold px-2">
+                Edit your AI/LLMs datasets in your browser, no need to download anything.
+              </CardDescription>
+              <p className="text-base sm:text-lg text-muted-foreground mt-4 px-2">
+                Select a folder on your computer where your datasets will be stored.
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-6">
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
-                <p className="text-red-700 dark:text-red-300">{error}</p>
+              <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4">
+                <p className="text-destructive text-sm">{error}</p>
               </div>
             )}
             
             {/* Remember folder checkbox */}
-            <div className="flex items-center gap-3 mb-6">
-              <input
-                type="checkbox"
-                id="rememberFolder"
-                checked={rememberFolder}
-                onChange={(e) => setRememberFolder(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-              />
-              <label htmlFor="rememberFolder" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Remember this folder (saves folder permission for next time)
-              </label>
-            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    id="rememberFolder"
+                    checked={rememberFolder}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setRememberFolderState(checked);
+                      setRememberFolder(checked);
+                    }}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary mt-0.5"
+                  />
+                  <label htmlFor="rememberFolder" className="text-sm font-medium leading-relaxed peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    Remember this folder (saves folder permission for next time)
+                  </label>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Save folder permissions so you don&apos;t need to select it every time</p>
+              </TooltipContent>
+            </Tooltip>
             
-            <button
-              onClick={selectDirectory}
-              disabled={initializingDirectory}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium py-4 px-8 rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-3 text-lg mx-auto focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800"
-            >
-              {initializingDirectory ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Initializing...
-                </>
-              ) : (
-                <>
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
-                  </svg>
-                  Select Data Folder
-                </>
-              )}
-            </button>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-              All your data will be stored locally on your computer. You maintain full control over your files.
-            </p>
-          </div>
-        </div>
+            <div className="space-y-4">
+                              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={selectDirectory}
+                    disabled={initializingDirectory}
+                    size="lg"
+                    className="w-full"
+    
+                  >
+                    {initializingDirectory ? (
+                      <>
+                        <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+                        <span className="hidden sm:inline">Initializing...</span>
+                        <span className="sm:hidden">Initializing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FolderOpen className="mr-2 h-5 w-5 sm:h-6 sm:w-6" />
+                        <span className="hidden sm:inline">Select Data Folder</span>
+                        <span className="sm:hidden">Select Folder</span>
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Choose a folder where your datasets will be stored locally</p>
+                </TooltipContent>
+              </Tooltip>
+              <p className="text-sm text-muted-foreground text-center px-2">
+                All your data will be stored locally on your computer. You maintain full control over your files.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        
+
       </div>
     );
   }
 
   if (loading || checkingStoredDirectory) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-lg text-gray-600 dark:text-gray-300">
-            {checkingStoredDirectory ? "Checking for saved folder..." : "Loading datasets..."}
-          </p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="w-full max-w-md mx-4">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <RefreshCw className="h-12 w-12 sm:h-16 sm:w-16 text-primary animate-spin mb-6" />
+            <p className="text-base sm:text-lg text-muted-foreground text-center px-4">
+              {checkingStoredDirectory ? "Checking for saved folder..." : "Loading datasets..."}
+            </p>
+          </CardContent>
+        </Card>
+        
+
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800">
-      <div className="max-w-7xl mx-auto p-6 sm:p-8">
+      return (
+      <div className="min-h-screen relative">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6 z-10 flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link href="/docs">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>View documentation and guides</p>
+            </TooltipContent>
+          </Tooltip>
+          <ThemeToggle />
+        </div>
+      <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         {/* Header */}
-        <header className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mb-6">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
+        <header className="text-center my-8 sm:my-12">
+          
+        
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl text-foreground font-bold mb-4 flex items-center justify-center gap-4">
+            <Image src="/logo.png" alt="DataGreg logo" width={64} height={64} />
             DataGreg
-          </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto mb-8">
+            </h1>
+          <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-3xl mx-auto mb-6 sm:mb-8 px-4">
             Create and manage datasets for fine-tuning AI models. Data is stored locally on your computer.
           </p>
           
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-2xl mx-auto mb-8">
-              <p className="text-red-700 dark:text-red-300">{error}</p>
+            <div className="max-w-2xl mx-auto mb-6 sm:mb-8 rounded-lg border border-destructive/50 bg-destructive/5 p-4">
+              <p className="text-destructive text-sm">{error}</p>
             </div>
           )}
           
           {/* Quick stats and controls */}
           <div className="flex flex-col items-center gap-4">
-            <div className="inline-flex items-center gap-6 bg-white dark:bg-slate-800 rounded-2xl px-6 py-4 shadow-lg border border-gray-200 dark:border-slate-700">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <Card className="w-full max-w-fit">
+              <CardContent className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6 px-4 sm:px-6">
+                <Badge variant="outline" className="gap-1 whitespace-nowrap">
+                  <FolderOpen className="h-3 w-3" />
                   {datasets.length} Dataset{datasets.length === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                </Badge>
+                <Separator orientation="vertical" className="hidden sm:block h-6" />
+                <Badge variant="secondary" className="gap-1 whitespace-nowrap">
+                  <Database className="h-3 w-3" />
                   {datasets.reduce((acc, d) => acc + (d.items?.length || 0), 0)} Total Pairs
-                </span>
-              </div>
-            </div>
+                </Badge>
+              </CardContent>
+            </Card>
             
-            {/* Reset folder button */}
-            <button
-              onClick={resetDirectory}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors duration-200 flex items-center gap-2"
-              title="Reset data folder"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 14l-4-4m0 4l4-4" />
-              </svg>
-              Change Data Folder
-            </button>
+            {/* Action buttons */}
+            <div className="flex items-center gap-3">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetDirectory}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    <span className="hidden sm:inline">Change Data Folder</span>
+                    <span className="sm:hidden">Change Folder</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Select a different folder for your data storage</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </header>
 
         {/* Actions */}
-        <div className="flex justify-center mb-12">
-          <button
-            onClick={createNewDataset}
-            disabled={creating}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium py-4 px-8 rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800"
-            aria-label="Create a new dataset"
-          >
-            {creating ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Creating...
-              </>
-            ) : (
-              <>
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Create New Dataset
-              </>
-            )}
-          </button>
+        <div className="flex justify-center mb-8 sm:mb-12">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={createNewDataset}
+                disabled={creating}
+                size="lg"
+                className="text-base sm:text-lg px-6 sm:px-8 py-4 sm:py-6 h-auto"
+
+              >
+                {creating ? (
+                  <>
+                    <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+                    <span className="hidden sm:inline">Creating...</span>
+                    <span className="sm:hidden">Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="mr-2 h-5 w-5 sm:h-6 sm:w-6" />
+                    <span className="hidden sm:inline">Create New Dataset</span>
+                    <span className="sm:hidden">Create Dataset</span>
+                  </>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Create a new dataset to organize your training pairs</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Datasets Grid */}
         {datasets.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-lg border border-gray-200 dark:border-slate-700 p-12 max-w-2xl mx-auto">
-              <svg className="w-24 h-24 text-gray-300 dark:text-gray-600 mx-auto mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
-                No datasets yet
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-8 text-lg">
-                Get started by creating your first dataset. You can then add input/output pairs for fine-tuning your AI models.
-              </p>
-              <button
-                onClick={createNewDataset}
-                disabled={creating}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium py-3 px-6 rounded-lg hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 transition-all duration-200 shadow-md hover:shadow-lg flex items-center gap-2 mx-auto focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Create Your First Dataset
-              </button>
-            </div>
+          <div className="flex justify-center py-8 sm:py-16">
+            <Card className="max-w-2xl w-full mx-4">
+              <CardContent className="flex flex-col items-center text-center py-12 sm:py-16 px-6">
+                <Database className="h-16 w-16 sm:h-24 sm:w-24 text-muted-foreground mb-6 sm:mb-8" />
+                <CardTitle className="text-xl sm:text-2xl mb-4">No datasets yet</CardTitle>
+                <CardDescription className="text-base sm:text-lg mb-6 sm:mb-8 max-w-md">
+                  Get started by creating your first dataset. You can then add input/output pairs for fine-tuning your AI models.
+                </CardDescription>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={createNewDataset}
+                      disabled={creating}
+                      size="lg"
+                      className="w-full sm:w-auto"
+      
+                    >
+                      {creating ? (
+                        <>
+                          <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+                          <span className="hidden sm:inline">Creating...</span>
+                          <span className="sm:hidden">Creating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="mr-2 h-5 w-5" />
+                          <span className="hidden sm:inline">Create Your First Dataset</span>
+                          <span className="sm:hidden">Create Dataset</span>
+                        </>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Create your first dataset to start organizing training data</p>
+                  </TooltipContent>
+                </Tooltip>
+              </CardContent>
+            </Card>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {datasets.map((dataset) => (
               <DatasetCard
                 key={dataset.id}
@@ -382,14 +562,111 @@ export default function Home() {
             ))}
           </div>
         )}
-
-        {/* Footer */}
-        <footer className="text-center mt-16 py-8 border-t border-gray-200 dark:border-slate-700">
-          <p className="text-gray-500 dark:text-gray-400">
-            Built with Next.js • Export to JSONL for OpenAI, Gemini, and more
-          </p>
-        </footer>
       </div>
+
+      {/* Create Dataset Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Dataset</DialogTitle>
+            <DialogDescription>
+              Give your dataset a meaningful name that describes its purpose, like &quot;Customer Support&quot; or &quot;Code Generation&quot;.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="dataset-name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="dataset-name"
+                value={newDatasetName}
+                onChange={(e) => setNewDatasetName(e.target.value)}
+                className="col-span-3"
+                placeholder="Enter dataset name..."
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newDatasetName.trim()) {
+                    handleCreateDataset();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateDataset} 
+              disabled={!newDatasetName.trim() || creating}
+            >
+              {creating ? "Creating..." : "Create Dataset"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Dataset Dialog */}
+      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Dataset</DialogTitle>
+            <DialogDescription>
+              Enter a new name for &quot;{datasetToRename?.name}&quot;.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rename-dataset-name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="rename-dataset-name"
+                value={renameDatasetName}
+                onChange={(e) => setRenameDatasetName(e.target.value)}
+                className="col-span-3"
+                placeholder="Enter dataset name..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && renameDatasetName.trim()) {
+                    handleRenameDataset();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRenameDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleRenameDataset} 
+              disabled={!renameDatasetName.trim()}
+            >
+              Rename Dataset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dataset Confirmation Dialog */}
+      <AlertDialog open={!!datasetToDelete} onOpenChange={() => setDatasetToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Dataset</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete dataset &quot;{datasetToDelete?.name}&quot;? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDatasetToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteDataset} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

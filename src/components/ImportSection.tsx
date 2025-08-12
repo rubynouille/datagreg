@@ -1,7 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ExportFormat } from "@/lib/types";
+import { getDefaultExportFormat, setDefaultExportFormat } from "@/lib/preferences";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Plus, RefreshCw } from "lucide-react";
 
 interface ImportSectionProps {
   onImport: (format: ExportFormat, jsonl: string) => Promise<void>;
@@ -11,7 +19,13 @@ interface ImportSectionProps {
 
 export function ImportSection({ onImport, loading = false, result = "" }: ImportSectionProps) {
   const [importText, setImportText] = useState<string>("");
-  const [importFormat, setImportFormat] = useState<ExportFormat>("gemini");
+  const [importFormat, setImportFormat] = useState<ExportFormat>("openai_chat");
+
+  // Load preferred format on mount
+  useEffect(() => {
+    const preferredFormat = getDefaultExportFormat();
+    setImportFormat(preferredFormat);
+  }, []);
 
   async function handleImport() {
     if (!importText.trim()) return;
@@ -20,46 +34,85 @@ export function ImportSection({ onImport, loading = false, result = "" }: Import
   }
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 sm:p-8">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold flex items-center gap-2">
-          <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Import JSONL
-        </h2>
-        <div className="flex items-center gap-2">
-          <label htmlFor="import-format" className="sr-only">Import format</label>
-          <select
-            id="import-format"
-            className="border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            value={importFormat}
-            onChange={(e) => setImportFormat(e.target.value as ExportFormat)}
-          >
-            <option value="gemini">Gemini JSONL</option>
-            <option value="openai_chat">OpenAI Chat JSONL</option>
-          </select>
-          <button
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800"
-            onClick={handleImport}
-            disabled={!importText.trim() || loading}
-          >
-            {loading ? 'Importing...' : 'Import'}
-          </button>
+    <Card>
+      <CardHeader className="pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <CardTitle className="flex items-center gap-2">
+            <Plus className="h-5 w-5 text-primary" />
+            Import JSONL
+          </CardTitle>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="space-y-2 sm:space-y-0">
+              <Label htmlFor="import-format" className="sr-only">Import format</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Select value={importFormat} onValueChange={(value) => {
+                    const format = value as ExportFormat;
+                    setImportFormat(format);
+                    setDefaultExportFormat(format); // Remember user's choice
+                  }}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue placeholder="Select format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai_chat">OpenAI Chat JSONL</SelectItem>
+                      <SelectItem value="gemini">Gemini JSONL</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Choose the format of your JSONL data. Your preference will be saved.</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleImport}
+                  disabled={!importText.trim() || loading}
+                  className="w-full sm:w-auto"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    'Import'
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Import JSONL data into this dataset</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-      </div>
-      <textarea
-        className="w-full border border-gray-300 dark:border-slate-600 rounded-lg p-4 min-h-32 text-sm bg-white dark:bg-slate-700 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-y font-mono"
-        value={importText}
-        onChange={(e) => setImportText(e.target.value)}
-        placeholder="Paste JSONL content here..."
-        aria-label="JSONL content to import"
-      />
-      {result && (
-        <p className="text-sm mt-2 text-gray-600 dark:text-gray-300" role="status" aria-live="polite">
-          {result}
-        </p>
-      )}
-    </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="jsonl-content">JSONL Content</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Textarea
+                id="jsonl-content"
+                className="min-h-32 font-mono text-sm"
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="Paste JSONL content here..."
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Paste your JSONL data here. Each line should be a complete JSON object.</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        {result && (
+          <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+            {result}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -50,16 +50,21 @@ class ClientDatabase {
       return "This application requires a browser environment.";
     }
 
+    // First check if the API is actually supported, regardless of user agent
+    if (this.isSupported()) {
+      return "Your browser supports File System Access API. You're good to go!";
+    }
+
     const userAgent = navigator.userAgent.toLowerCase();
     
-    if (userAgent.includes("chrome") || userAgent.includes("chromium")) {
-      return "Your browser supports File System Access API. You're good to go!";
-    } else if (userAgent.includes("edge")) {
-      return "Microsoft Edge supports File System Access API. You're ready to use this application!";
-    } else if (userAgent.includes("firefox")) {
+    // Provide more accurate compatibility information based on actual browser support
+    if (userAgent.includes("firefox")) {
       return "Firefox doesn't yet support File System Access API. Please switch to Chrome, Edge, or another Chromium-based browser.";
-    } else if (userAgent.includes("safari")) {
+    } else if (userAgent.includes("safari") && !userAgent.includes("chrome")) {
       return "Safari doesn't support File System Access API. Please switch to Chrome, Edge, or another Chromium-based browser.";
+    } else if (userAgent.includes("chrome") || userAgent.includes("chromium") || userAgent.includes("edge")) {
+      // Browser should support it but API check failed - might be disabled or older version
+      return "Your browser should support File System Access API, but it appears to be unavailable. Please ensure you're using a recent version and the feature isn't disabled.";
     } else {
       return "Your browser doesn't support File System Access API. Please use Chrome, Edge, or another Chromium-based browser for the best experience.";
     }
@@ -156,15 +161,7 @@ class ClientDatabase {
     const now = new Date().toISOString();
     return {
       version: 2,
-      datasets: [
-        {
-          id: crypto.randomUUID(),
-          name: "Default",
-          items: [],
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
+      datasets: [],
       createdAt: now,
       updatedAt: now,
     };
@@ -282,7 +279,7 @@ class ClientDatabase {
     try {
       const request = indexedDB.open('DataGregDB', 1);
       
-      return new Promise((resolve, _reject) => {
+      return new Promise((resolve) => {
         request.onerror = () => resolve(null);
         request.onsuccess = async () => {
           const db = request.result;
@@ -505,7 +502,7 @@ class ClientDatabase {
 
     if (datasetId) {
       targetDataset = db.datasets?.find(d => d.id === datasetId);
-      pairIndex = targetDataset?.items.findIndex(p => p.id === id) || -1;
+      pairIndex = (targetDataset?.items.findIndex(p => p.id === id) ?? -1);
     } else {
       // Search all datasets
       for (const dataset of db.datasets || []) {
